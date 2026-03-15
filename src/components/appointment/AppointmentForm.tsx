@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
-import { CalendarIcon, Loader2, User, Stethoscope, CalendarClock, Lock } from 'lucide-react';
+import { CalendarIcon, Loader2, User, Stethoscope, CalendarClock, Lock, ClipboardList, Upload, FileText as FileTextIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -28,7 +28,9 @@ const formSchema = z.object({
   email: z.string().email({ message: 'Adresse email invalide.' }),
   doctor: z.string().min(1, { message: 'Veuillez sélectionner un médecin/service.' }),
   hospital: z.string().min(1, { message: 'Veuillez sélectionner un établissement.' }),
-  consultationType: z.string().min(1, { message: 'Veuillez sélectionner un type de consultation.' }),
+  appointmentType: z.string().min(1, { message: 'Veuillez sélectionner un type de rendez-vous.' }),
+  reason: z.string().max(300, { message: 'Le motif ne doit pas dépasser 300 caractères.' }).optional(),
+  medicalDocument: z.any().optional(),
   date: z.date({
     message: 'Une date est requise.',
   }),
@@ -49,13 +51,18 @@ const hospitals = [
   'Hôpital Général Idrissa Pouye',
 ];
 
-const consultationTypes = ['Consultation', 'Contrôle', 'Suivi', 'Téléconsultation'];
+const appointmentTypes = [
+  { value: 'service', label: 'Consultation au service' },
+  { value: 'cabinet', label: 'Consultation au cabinet' },
+  { value: 'online', label: 'Consultation en ligne' },
+  { value: 'biologie', label: 'Biologie' },
+  { value: 'imagerie', label: 'Imagerie' }
+];
 
 const availableTimes = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00', '15:30', '16:00'];
 
 const calculatePrice = (type: string, service: string) => {
-  if (type === 'Téléconsultation') return 15000;
-  if (type === 'Contrôle') return 10000;
+  if (type === 'online') return 15000;
   if (service === 'Médecine Générale') return 15000;
   return 20000;
 };
@@ -76,17 +83,19 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
       email: '',
       doctor: '',
       hospital: '',
-      consultationType: '',
+      appointmentType: '',
+      reason: '',
+      medicalDocument: undefined,
       time: '',
     },
   });
 
-  const watchConsultationType = form.watch('consultationType');
+  const watchAppointmentType = form.watch('appointmentType');
   const watchDoctor = form.watch('doctor');
   
   const selectedDoctor = doctors.find((d) => d.id === watchDoctor);
-  const currentPrice = watchConsultationType && selectedDoctor 
-    ? calculatePrice(watchConsultationType, selectedDoctor.service) 
+  const currentPrice = watchAppointmentType && selectedDoctor 
+    ? calculatePrice(watchAppointmentType, selectedDoctor.service) 
     : 0;
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
@@ -99,21 +108,31 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
         ...values,
         doctor: doc ? doc.name : values.doctor,
         service: doc ? doc.service : 'Général',
+        reason: values.reason,
+        medicalDocument: values.medicalDocument,
         price: currentPrice,
       };
 
       const res = await createAppointment(appointmentData);
 
-      if (res.success) {
+      if (res.success && res.data) {
         toast.success("Rendez-vous confirmé !", {
           description: "Votre carte de rendez-vous est prête.",
         });
         
-        if (values.consultationType === 'Téléconsultation') {
+        // Pass medical document URL to the card if parse saved it and provided an ID
+        const finalData = {
+          ...res.data,
+          medicalDocumentUrl: res.data.medicalDocument ? (res.data.medicalDocument.url 
+            ? res.data.medicalDocument.url() 
+            : URL.createObjectURL(res.data.medicalDocument)) : undefined
+        };
+        
+        if (values.appointmentType === 'online') {
             await handleTeleconsultationNotifications(appointmentData);
         }
 
-        onSuccess(res.data);
+        onSuccess(finalData);
       } else {
         toast.error("Erreur", { description: res.error || "Une erreur s'est produite." });
       }
@@ -236,7 +255,7 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
                   <FormItem>
                     <FormLabel className="text-[#0F2A44]">Médecin / Service</FormLabel>
                     <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }}>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <Select onValueChange={field.onChange} value={field.value ?? null}>
                         <FormControl>
                           <SelectTrigger className="h-12 px-4 rounded-xl border-gray-200 focus:ring-2 focus:ring-[#36B37E] focus:border-[#36B37E] shadow-sm transition-all duration-200 bg-white">
                             <SelectValue placeholder="Sélectionnez un médecin" />
@@ -266,7 +285,7 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
                   <FormItem>
                     <FormLabel className="text-[#0F2A44]">Établissement</FormLabel>
                     <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }}>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <Select onValueChange={field.onChange} value={field.value ?? null}>
                         <FormControl>
                           <SelectTrigger className="h-12 px-4 rounded-xl border-gray-200 focus:ring-2 focus:ring-[#36B37E] focus:border-[#36B37E] shadow-sm transition-all duration-200 bg-white">
                             <SelectValue placeholder="Sélectionnez un établissement" />
@@ -286,24 +305,104 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
 
               <FormField
                 control={form.control}
-                name="consultationType"
+                name="appointmentType"
                 render={({ field }) => (
                   <FormItem className="md:col-span-2">
-                    <FormLabel className="text-[#0F2A44]">Type de consultation</FormLabel>
+                    <FormLabel className="text-[#0F2A44]">Type de Rendez-vous :</FormLabel>
                     <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }}>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <Select onValueChange={field.onChange} value={field.value ?? null}>
                         <FormControl>
                           <SelectTrigger className="h-12 px-4 rounded-xl border-gray-200 focus:ring-2 focus:ring-[#36B37E] focus:border-[#36B37E] shadow-sm transition-all duration-200 bg-white">
-                            <SelectValue placeholder="Sélectionnez le type de consultation" />
+                            <SelectValue placeholder="Sélectionnez le type de rendez-vous" />
                           </SelectTrigger>
                         </FormControl>
-                        <SelectContent className="rounded-xl shadow-lg border-gray-100">
-                          {consultationTypes.map((type) => (
-                            <SelectItem key={type} value={type} className="rounded-lg cursor-pointer">{type}</SelectItem>
+                        <SelectContent className="w-[340px] rounded-xl shadow-lg border border-gray-100">
+                          {appointmentTypes.map((type) => (
+                            <SelectItem key={type.value} value={type.value} className="rounded-lg cursor-pointer pr-10">{type.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </motion.div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h3 className="text-xl font-semibold text-[#0F2A44] flex items-center gap-2 border-b border-[#CFE6EC] pb-2">
+              <ClipboardList className="w-6 h-6 text-[#1E6F8F]" /> 3. Motif de la consultation
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="reason"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel className="text-sm font-medium text-[#0F2A44]">Motif de la consultation</FormLabel>
+                    <FormControl>
+                      <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }}>
+                        <textarea
+                          placeholder="Expliquez brièvement la raison de votre consultation..."
+                          className="w-full min-h-[120px] rounded-xl border border-gray-200 p-4 focus:ring-2 focus:ring-[#36B37E] focus:border-[#36B37E] outline-none resize-none bg-white shadow-sm transition-all duration-200"
+                          maxLength={300}
+                          {...field}
+                        />
+                      </motion.div>
+                    </FormControl>
+                    <p className="text-xs text-brand-secondary mt-1 flex items-center gap-1.5">
+                      <Lock className="w-3 h-3" /> 🔒 Vos informations médicales sont confidentielles.
+                    </p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="medicalDocument"
+                render={({ field: { value, onChange, ...fieldProps } }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel className="text-sm font-medium text-[#0F2A44]">Joindre un document médical (optionnel)</FormLabel>
+                    <FormControl>
+                      <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }} className="h-full">
+                        <div className="relative h-[120px] flex flex-col justify-center border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-[#36B37E] transition cursor-pointer bg-slate-50 overflow-hidden">
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file && file.size <= 5 * 1024 * 1024) {
+                                 onChange(file);
+                              } else if (file) {
+                                 toast.error("Fichier trop volumineux", { description: "La taille maximum est de 5MB." });
+                                 e.target.value = '';
+                              }
+                            }}
+                            {...fieldProps}
+                            value={undefined} 
+                          />
+                          {value ? (
+                            <div className="flex flex-col items-center justify-center gap-1">
+                               <FileTextIcon className="h-6 w-6 text-[#36B37E]" />
+                               <p className="text-xs font-medium text-[#0F2A44] truncate w-full px-2">{value.name}</p>
+                               <p className="text-[10px] text-gray-500">{(value.size / 1024 / 1024).toFixed(2)} MB</p>
+                            </div>
+                          ) : (
+                            <>
+                              <Upload className="mx-auto h-6 w-6 text-gray-400 mb-2" />
+                              <p className="text-sm text-gray-600">Glissez votre document ici ou cliquez pour uploader</p>
+                              <p className="text-[10px] text-gray-400 mt-1">PDF, JPG ou PNG (max 5MB)</p>
+                            </>
+                          )}
+                        </div>
+                      </motion.div>
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -313,7 +412,7 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
 
           <div className="space-y-6">
             <h3 className="text-xl font-semibold text-[#0F2A44] flex items-center gap-2 border-b border-[#CFE6EC] pb-2">
-              <CalendarClock className="w-6 h-6 text-[#1E6F8F]" /> 3. Date et heure
+              <CalendarClock className="w-6 h-6 text-[#1E6F8F]" /> 4. Date et heure
             </h3>
             <div className="grid md:grid-cols-2 gap-6">
               <FormField
@@ -366,7 +465,7 @@ export const AppointmentForm = ({ onSuccess }: AppointmentFormProps) => {
                   <FormItem>
                     <FormLabel className="text-[#0F2A44]">Heure souhaitée</FormLabel>
                     <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }}>
-                      <Select onValueChange={field.onChange} value={field.value || ""} disabled={!form.watch('date')}>
+                      <Select onValueChange={field.onChange} value={field.value ?? null} disabled={!form.watch('date')}>
                         <FormControl>
                           <SelectTrigger className="h-12 px-4 rounded-xl border-gray-200 focus:ring-2 focus:ring-[#36B37E] focus:border-[#36B37E] shadow-sm transition-all duration-200 bg-white">
                             <SelectValue placeholder="Sélectionnez une heure" />

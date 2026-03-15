@@ -8,7 +8,9 @@ export interface AppointmentData {
   doctor: string;
   service: string;
   hospital: string;
-  consultationType: string;
+  appointmentType: string;
+  reason?: string;
+  medicalDocument?: any;
   date: Date;
   time: string;
   price: number;
@@ -29,7 +31,14 @@ export const createAppointment = async (data: AppointmentData) => {
   appointment.set('doctor', data.doctor);
   appointment.set('service', data.service);
   appointment.set('hospital', data.hospital);
-  appointment.set('consultationType', data.consultationType);
+  appointment.set('appointmentType', data.appointmentType);
+  if (data.reason) {
+    appointment.set('reason', data.reason);
+  }
+  if (data.medicalDocument) {
+    const parseFile = new Parse.File(data.medicalDocument.name, data.medicalDocument);
+    appointment.set('medicalDocument', parseFile);
+  }
   appointment.set('date', data.date);
   appointment.set('time', data.time);
   appointment.set('price', data.price);

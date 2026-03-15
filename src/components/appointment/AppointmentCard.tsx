@@ -4,7 +4,7 @@ import React, { useRef } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { AppointmentQRCode } from './AppointmentQRCode';
-import { Calendar, Clock, MapPin, User, Stethoscope, Download, Printer, CalendarPlus, CheckCircle2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, Stethoscope, Download, Printer, CalendarPlus, CheckCircle2, ClipboardList, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -19,7 +19,9 @@ interface AppointmentCardProps {
     doctor: string;
     service: string;
     hospital: string;
-    consultationType: string;
+    appointmentType: string;
+    reason?: string;
+    medicalDocumentUrl?: string;
     price: number;
   };
 }
@@ -149,9 +151,28 @@ export const AppointmentCard = ({ data }: AppointmentCardProps) => {
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Établissement</p>
                   <p className="font-bold text-brand-primary">{data.hospital}</p>
-                  <p className="text-brand-secondary text-sm capitalize">{data.consultationType.toLowerCase()}</p>
+                  <p className="text-brand-secondary text-sm capitalize">
+                    {{ service: 'Consultation au service', cabinet: 'Consultation au cabinet', online: 'Consultation en ligne', biologie: 'Biologie', imagerie: 'Imagerie' }[data.appointmentType] || data.appointmentType}
+                  </p>
                 </div>
               </div>
+
+              {data.reason && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-100 shadow-sm mt-4">
+                  <div className="text-amber-600">
+                    <ClipboardList size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-amber-700/80 uppercase tracking-wider font-semibold">Motif du patient</p>
+                    <p className="font-medium text-amber-900 mt-1">{data.reason}</p>
+                    {data.medicalDocumentUrl && (
+                      <a href={data.medicalDocumentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-[#1E6F8F] hover:underline bg-white px-3 py-1.5 rounded border border-[#CFE6EC]">
+                        <FileText size={14} /> Télécharger le document joint
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
 
             </div>
 

@@ -27,7 +27,7 @@ export const sendReminder15mNotification = async (details: any) => {
 };
 
 export const handleTeleconsultationNotifications = async (details: any) => {
-  if (details.consultationType === 'Téléconsultation') {
+  if (details.appointmentType === 'online') {
     // Send immediate confirmation
     await sendConfirmationNotification(details);
     
